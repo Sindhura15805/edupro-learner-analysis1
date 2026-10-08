@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
+import plotly.express as px
 
 # -----------------------------
-# Page Configuration
+# PAGE
 # -----------------------------
 st.set_page_config(
     page_title="EduPro Learner Analytics",
@@ -13,12 +12,10 @@ st.set_page_config(
 )
 
 st.title("🎓 EduPro Learner Demographics & Course Enrollment Analysis")
-st.write(
-    "Analysis of learner demographics, course preferences and enrollment behavior."
-)
+st.write("Interactive analysis of learner demographics and course enrollment behavior.")
 
 # -----------------------------
-# Load Dataset
+# LOAD DATA
 # -----------------------------
 file_path = "EduPro Online Platform.xlsx"
 
@@ -27,13 +24,13 @@ courses = pd.read_excel(file_path, sheet_name="Courses")
 transactions = pd.read_excel(file_path, sheet_name="Transactions")
 
 # -----------------------------
-# Merge Data
+# MERGE DATA
 # -----------------------------
 data = pd.merge(users, transactions, on="UserID")
 data = pd.merge(data, courses, on="CourseID")
 
 # -----------------------------
-# Create Age Groups
+# AGE GROUP
 # -----------------------------
 def age_group(age):
     if age < 18:
@@ -50,7 +47,7 @@ def age_group(age):
 data["AgeGroup"] = data["Age"].apply(age_group)
 
 # -----------------------------
-# Sidebar Filters
+# SIDEBAR FILTERS
 # -----------------------------
 st.sidebar.header("🔎 Filters")
 
@@ -79,7 +76,7 @@ level_filter = st.sidebar.multiselect(
 )
 
 # -----------------------------
-# Apply Filters
+# FILTER DATA
 # -----------------------------
 filtered = data[
     (data["AgeGroup"].isin(age_filter)) &
@@ -91,7 +88,7 @@ filtered = data[
 # -----------------------------
 # KPI SECTION
 # -----------------------------
-st.header("📌 Key Performance Indicators")
+st.header("📌 Key Metrics")
 
 col1, col2, col3, col4 = st.columns(4)
 
@@ -109,7 +106,8 @@ learner_counts = filtered.groupby("UserID")["CourseID"].count()
 
 col3.metric(
     "Avg Courses per Learner",
-    round(learner_counts.mean(), 2) if len(learner_counts) > 0 else 0
+    round(learner_counts.mean(), 2)
+    if len(learner_counts) > 0 else 0
 )
 
 col4.metric(
@@ -119,187 +117,180 @@ col4.metric(
 )
 
 # -----------------------------
-# DEMOGRAPHIC OVERVIEW
+# DEMOGRAPHICS
 # -----------------------------
-st.header("👥 Learner Demographic Overview")
+st.header("👥 Learner Demographics")
 
 col1, col2 = st.columns(2)
 
 with col1:
 
-    st.subheader("Age Group Distribution")
-
-    age_counts = filtered["AgeGroup"].value_counts().sort_index()
-
-    fig, ax = plt.subplots(figsize=(7, 4))
-
-    sns.barplot(
-        x=age_counts.index,
-        y=age_counts.values,
-        ax=ax
+    age_counts = (
+        filtered["AgeGroup"]
+        .value_counts()
+        .sort_index()
+        .reset_index()
     )
 
-    ax.set_xlabel("Age Group")
-    ax.set_ylabel("Learners")
-    ax.set_title("Learners by Age Group")
+    age_counts.columns = ["AgeGroup", "Enrollments"]
 
-    st.pyplot(fig)
+    fig = px.bar(
+        age_counts,
+        x="AgeGroup",
+        y="Enrollments",
+        title="Learners by Age Group",
+        text="Enrollments"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 with col2:
 
-    st.subheader("Gender Participation")
-
-    gender_counts = filtered["Gender"].value_counts()
-
-    fig, ax = plt.subplots(figsize=(7, 4))
-
-    sns.barplot(
-        x=gender_counts.index,
-        y=gender_counts.values,
-        ax=ax
+    gender_counts = (
+        filtered["Gender"]
+        .value_counts()
+        .reset_index()
     )
 
-    ax.set_xlabel("Gender")
-    ax.set_ylabel("Learners")
-    ax.set_title("Gender Distribution")
+    gender_counts.columns = ["Gender", "Enrollments"]
 
-    st.pyplot(fig)
+    fig = px.bar(
+        gender_counts,
+        x="Gender",
+        y="Enrollments",
+        title="Gender Participation",
+        text="Enrollments"
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
 # AGE-WISE ENROLLMENT
 # -----------------------------
 st.header("📈 Age-wise Enrollment")
 
-age_enrollment = filtered["AgeGroup"].value_counts().sort_index()
-
-fig, ax = plt.subplots(figsize=(10, 5))
-
-sns.barplot(
-    x=age_enrollment.index,
-    y=age_enrollment.values,
-    ax=ax
+age_enrollment = (
+    filtered["AgeGroup"]
+    .value_counts()
+    .sort_index()
+    .reset_index()
 )
 
-ax.set_xlabel("Age Group")
-ax.set_ylabel("Enrollments")
-ax.set_title("Enrollments Across Age Groups")
+age_enrollment.columns = ["AgeGroup", "Enrollments"]
 
-st.pyplot(fig)
+fig = px.bar(
+    age_enrollment,
+    x="AgeGroup",
+    y="Enrollments",
+    title="Enrollments Across Age Groups",
+    text="Enrollments"
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# COURSE PREFERENCES
+# COURSE CATEGORY
 # -----------------------------
-st.header("📚 Course Preference Analysis")
+st.header("📚 Course Preferences")
 
-col1, col2 = st.columns(2)
+category_counts = (
+    filtered["CourseCategory"]
+    .value_counts()
+    .reset_index()
+)
 
-with col1:
+category_counts.columns = ["CourseCategory", "Enrollments"]
 
-    st.subheader("Course Category Popularity")
+fig = px.bar(
+    category_counts,
+    x="CourseCategory",
+    y="Enrollments",
+    title="Course Category Popularity",
+    text="Enrollments"
+)
 
-    category_counts = filtered["CourseCategory"].value_counts()
+st.plotly_chart(fig, use_container_width=True)
 
-    fig, ax = plt.subplots(figsize=(8, 5))
+# -----------------------------
+# COURSE LEVEL
+# -----------------------------
+level_counts = (
+    filtered["CourseLevel"]
+    .value_counts()
+    .reset_index()
+)
 
-    sns.barplot(
-        x=category_counts.index,
-        y=category_counts.values,
-        ax=ax
-    )
+level_counts.columns = ["CourseLevel", "Enrollments"]
 
-    ax.set_xlabel("Course Category")
-    ax.set_ylabel("Enrollments")
-    ax.tick_params(axis="x", rotation=45)
+fig = px.bar(
+    level_counts,
+    x="CourseLevel",
+    y="Enrollments",
+    title="Course Level Preference",
+    text="Enrollments"
+)
 
-    st.pyplot(fig)
-
-with col2:
-
-    st.subheader("Course Level Preference")
-
-    level_counts = filtered["CourseLevel"].value_counts()
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-
-    sns.barplot(
-        x=level_counts.index,
-        y=level_counts.values,
-        ax=ax
-    )
-
-    ax.set_xlabel("Course Level")
-    ax.set_ylabel("Enrollments")
-
-    st.pyplot(fig)
+st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
 # COURSE TYPE
 # -----------------------------
-st.subheader("Course Type Popularity")
-
-type_counts = filtered["CourseType"].value_counts()
-
-fig, ax = plt.subplots(figsize=(8, 5))
-
-sns.barplot(
-    x=type_counts.index,
-    y=type_counts.values,
-    ax=ax
+type_counts = (
+    filtered["CourseType"]
+    .value_counts()
+    .reset_index()
 )
 
-ax.set_xlabel("Course Type")
-ax.set_ylabel("Enrollments")
+type_counts.columns = ["CourseType", "Enrollments"]
 
-st.pyplot(fig)
+fig = px.bar(
+    type_counts,
+    x="CourseType",
+    y="Enrollments",
+    title="Course Type Popularity",
+    text="Enrollments"
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
 # AGE GROUP VS CATEGORY
 # -----------------------------
 st.header("🔥 Demographic Course Preferences")
 
-st.subheader("Age Group vs Course Category")
-
 age_category = pd.crosstab(
     filtered["AgeGroup"],
     filtered["CourseCategory"]
 )
 
-fig, ax = plt.subplots(figsize=(10, 6))
-
-sns.heatmap(
+fig = px.imshow(
     age_category,
-    annot=True,
-    fmt="d",
-    ax=ax
+    text_auto=True,
+    aspect="auto",
+    title="Age Group vs Course Category"
 )
 
-ax.set_xlabel("Course Category")
-ax.set_ylabel("Age Group")
-
-st.pyplot(fig)
+st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
 # GENDER VS LEVEL
 # -----------------------------
-st.subheader("Gender vs Course Level")
-
 gender_level = pd.crosstab(
     filtered["Gender"],
     filtered["CourseLevel"]
 )
 
-fig, ax = plt.subplots(figsize=(8, 5))
+gender_level = gender_level.reset_index()
 
-gender_level.plot(
-    kind="bar",
-    ax=ax
+fig = px.bar(
+    gender_level,
+    x="Gender",
+    y=gender_level.columns[1:].tolist(),
+    barmode="group",
+    title="Gender vs Course Level"
 )
 
-ax.set_xlabel("Gender")
-ax.set_ylabel("Enrollments")
-ax.tick_params(axis="x", rotation=0)
-
-st.pyplot(fig)
+st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
 # LEARNER BEHAVIOR
@@ -309,7 +300,6 @@ st.header("📊 Learner Behavior")
 col1, col2 = st.columns(2)
 
 with col1:
-
     st.metric(
         "Average Enrollments per Learner",
         round(learner_counts.mean(), 2)
@@ -317,23 +307,38 @@ with col1:
     )
 
 with col2:
-
     st.metric(
         "Maximum Enrollments by One Learner",
         learner_counts.max()
         if len(learner_counts) > 0 else 0
     )
 
-st.subheader("Top Active Learners")
+# -----------------------------
+# TOP ACTIVE LEARNERS
+# -----------------------------
+st.subheader("Top 10 Active Learners")
 
-top_learners = learner_counts.sort_values(
-    ascending=False
-).head(10)
+top_learners = (
+    learner_counts
+    .sort_values(ascending=False)
+    .head(10)
+    .reset_index()
+)
 
-st.dataframe(top_learners)
+top_learners.columns = ["UserID", "Enrollments"]
+
+fig = px.bar(
+    top_learners,
+    x="UserID",
+    y="Enrollments",
+    title="Top 10 Active Learners",
+    text="Enrollments"
+)
+
+st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# BEGINNER VS ADVANCED
+# LEVEL BY AGE GROUP
 # -----------------------------
 st.subheader("Course Level Preference by Age Group")
 
@@ -342,41 +347,34 @@ level_age = pd.crosstab(
     filtered["CourseLevel"]
 )
 
-fig, ax = plt.subplots(figsize=(9, 5))
+level_age = level_age.reset_index()
 
-level_age.plot(
-    kind="bar",
-    ax=ax
+fig = px.bar(
+    level_age,
+    x="AgeGroup",
+    y=level_age.columns[1:].tolist(),
+    barmode="group",
+    title="Course Level Preference by Age Group"
 )
 
-ax.set_xlabel("Age Group")
-ax.set_ylabel("Enrollments")
-ax.tick_params(axis="x", rotation=0)
-
-st.pyplot(fig)
+st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
 # KEY INSIGHTS
 # -----------------------------
 st.header("💡 Key Insights")
 
-st.write("""
-• The 26–35 age group has the highest learner participation.
-
-• Female learners form the largest gender group.
-
-• Data Science is the most popular course category.
-
-• Free courses receive the highest number of enrollments.
-
-• Beginner-level courses are the most preferred.
-
-• Learners take an average of 3.33 courses each.
-
-• Some highly active learners have enrolled in up to 16 courses.
-
-• Data Science is highly preferred among 18–25 and 26–35 learners,
-while Finance is the leading category among learners below 18.
+st.markdown("""
+- **26–35** is the most active age group.
+- **Female learners** form the largest gender group.
+- **Data Science** is the most popular course category.
+- **Free courses** have the highest enrollments.
+- **Beginner-level courses** are the most preferred.
+- Learners take an average of **3.33 courses** each.
+- The maximum enrollment by one learner is **16 courses**.
+- Data Science is highly preferred among **18–25 and 26–35** learners.
+- Finance is the leading category among learners **below 18**.
+- Both male and female learners show the highest preference for **Beginner courses**.
 """)
 
 # -----------------------------
@@ -384,22 +382,24 @@ while Finance is the leading category among learners below 18.
 # -----------------------------
 st.header("🎯 Recommendations")
 
-st.write("""
-• Expand and regularly update Data Science course offerings.
+st.markdown("""
+1. **Expand Data Science offerings**  
+   Continue developing and updating Data Science courses based on its strong learner demand.
 
-• Provide more beginner-friendly courses with clear pathways
-  toward intermediate and advanced levels.
+2. **Strengthen beginner learning paths**  
+   Provide more beginner-friendly courses and clear pathways toward intermediate and advanced levels.
 
-• Continue providing accessible and free introductory courses
-  to encourage wider participation.
+3. **Maintain accessible learning options**  
+   Continue offering free introductory courses to encourage wider learner participation.
 
-• Develop course offerings according to the preferences observed
-  across different age groups.
+4. **Consider age-based preferences**  
+   Develop course offerings according to the different preferences observed across age groups.
 
-• Maintain inclusive learning opportunities for all genders.
+5. **Promote inclusive learning**  
+   Maintain accessible learning opportunities across different gender groups.
 
-• Study the learning patterns of highly active learners to improve
-  learner engagement.
+6. **Support active learners**  
+   Study the learning patterns of highly active learners to improve learner engagement.
 """)
 
 # -----------------------------
@@ -409,17 +409,13 @@ st.header("🏁 Conclusion")
 
 st.write("""
 The analysis provides descriptive learner intelligence for EduPro.
-The findings show clear differences in learner participation,
-course category preferences and course-level choices across
-demographic groups.
+The findings reveal clear patterns in learner demographics,
+course preferences and enrollment behavior.
 
 These insights can support better course planning, learner
 engagement, accessibility and inclusive education strategies.
 """)
 
-# -----------------------------
-# Footer
-# -----------------------------
 st.markdown("---")
 
 st.caption(
