@@ -160,57 +160,6 @@ freq = counts.value_counts().sort_index().rename_axis("Enrollments per Learner")
 fig = px.bar(freq, x="Enrollments per Learner", y="Number of Learners", title="Learner Enrollment Frequency")
 st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("Course Enrollment Detail")
-summary = df.groupby(["CourseName","CourseCategory","CourseLevel","CourseType"]).size().rename("Enrollments").reset_index().sort_values("Enrollments", ascending=False)
-st.dataframe(summary, use_container_width=True, hide_index=True)
-st.download_button("Download course summary as CSV", summary.to_csv(index=False).encode("utf-8"),
-                   file_name="edupro_course_summary.csv", mime="text/csv")
-
-# Supporting checks: data quality for an education/enrollment dataset
-st.header("🧹 Data Quality Checks")
-st.write("These checks help assess whether learner, course and enrollment records are complete and consistent before interpreting the dashboard. They flag potential issues; they do not automatically delete or change records.")
-
-with st.expander("View data quality results", expanded=False):
-    try:
-        users_raw = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Users")
-        courses_raw = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Courses")
-        transactions_raw = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Transactions")
-
-        # Check the source sheets separately so repeated joins do not inflate counts.
-        user_missing = int(users_raw.isna().sum().sum())
-        course_missing = int(courses_raw.isna().sum().sum())
-        transaction_missing = int(transactions_raw.isna().sum().sum())
-        exact_dupes = int(transactions_raw.duplicated().sum())
-        missing_user_ids = int(transactions_raw["UserID"].isna().sum()) if "UserID" in transactions_raw else 0
-        missing_course_ids = int(transactions_raw["CourseID"].isna().sum()) if "CourseID" in transactions_raw else 0
-        unknown_users = int((~transactions_raw["UserID"].isin(users_raw["UserID"]) & transactions_raw["UserID"].notna()).sum()) if {"UserID"}.issubset(transactions_raw.columns) and "UserID" in users_raw else 0
-        unknown_courses = int((~transactions_raw["CourseID"].isin(courses_raw["CourseID"]) & transactions_raw["CourseID"].notna()).sum()) if "CourseID" in transactions_raw and "CourseID" in courses_raw else 0
-
-        q1, q2, q3, q4 = st.columns(4)
-        q1.metric("Missing values — Users", f"{user_missing:,}")
-        q2.metric("Missing values — Courses", f"{course_missing:,}")
-        q3.metric("Missing values — Transactions", f"{transaction_missing:,}")
-        q4.metric("Exact duplicate transaction rows", f"{exact_dupes:,}")
-
-        integrity = pd.DataFrame({
-            "Check": ["Enrollment missing UserID", "Enrollment missing CourseID", "UserID not found in Users sheet", "CourseID not found in Courses sheet"],
-            "Records flagged": [missing_user_ids, missing_course_ids, unknown_users, unknown_courses]
-        })
-        st.subheader("Enrollment consistency")
-        st.dataframe(integrity, use_container_width=True, hide_index=True)
-
-        if "Age" in users_raw.columns:
-            ages_numeric = pd.to_numeric(users_raw["Age"], errors="coerce")
-            invalid_age = int(((ages_numeric < 0) | (ages_numeric > 100)).sum())
-            st.metric("Age values outside 0–100", f"{invalid_age:,}")
-        if {"UserID", "CourseID"}.issubset(transactions_raw.columns):
-            repeated_pairs = int(transactions_raw.duplicated(subset=["UserID", "CourseID"], keep=False).sum())
-            st.metric("Rows in repeated learner-course pairs", f"{repeated_pairs:,}")
-            st.caption("Repeated learner-course pairs are flagged for review, not automatically treated as errors: a learner may legitimately enrol in the same course more than once.")
-        st.caption("A non-zero count is a prompt to investigate the source data. It does not by itself prove that a record is wrong.")
-    except Exception as e:
-        st.warning(f"Data quality checks could not be completed: {e}")
-
 st.header("💡 Key Insights")
 age_top = df["AgeGroup"].value_counts().idxmax()
 cat_top = df["CourseCategory"].value_counts().idxmax()
