@@ -1,313 +1,237 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 
-# ---------------------------------------------------------
-# EduPro | Premium Learner & Course Intelligence Dashboard
-# ---------------------------------------------------------
-st.set_page_config(
-    page_title="EduPro | Learner Intelligence",
-    page_icon="🎓",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(page_title="EduPro Learner Analytics", page_icon="🎓", layout="wide")
 
-# Professional styling without external assets
 st.markdown("""
 <style>
-    .block-container {padding-top: 1.4rem; padding-bottom: 2.5rem; max-width: 1500px;}
-    [data-testid="stSidebar"] {border-right: 1px solid rgba(128,128,128,.22);}
-    .hero {
-        padding: 1.35rem 1.55rem; border-radius: 18px; margin-bottom: 1rem;
-        background: linear-gradient(120deg, #101c3a 0%, #183e67 55%, #166a78 100%);
-        color: white;
-    }
-    .hero h1 {color: white; margin: 0; font-size: 2rem;}
-    .hero p {color: #dce9f7; margin: .35rem 0 0 0; font-size: 1rem;}
-    .section-note {color: #6b7280; font-size: .92rem; margin-top: -.5rem;}
-    div[data-testid="stMetric"] {
-        background: rgba(128,128,128,.07); border: 1px solid rgba(128,128,128,.18);
-        padding: 15px 16px; border-radius: 14px;
-    }
-    .insight {
-        border: 1px solid rgba(128,128,128,.22); border-left: 4px solid #20a4a8;
-        padding: 12px 15px; border-radius: 10px; margin: 8px 0;
-        background: rgba(128,128,128,.045);
-    }
-    .small-muted {color: #6b7280; font-size: .85rem;}
-    div[data-testid="stTabs"] button {font-weight: 600;}
+.block-container {padding-top: 1.2rem; max-width: 1450px;}
+.hero {padding: 1.25rem 1.5rem; border-radius: 15px; color: white;
+background: linear-gradient(110deg,#14213d,#176b78); margin-bottom: 1rem;}
+.hero h1 {color:white; margin:0;}
+.hero p {color:#e2edf5; margin:.35rem 0 0;}
+div[data-testid="stMetric"] {background:rgba(120,130,150,.08); padding:12px; border-radius:12px;}
 </style>
 """, unsafe_allow_html=True)
 
-# Plotly template
-PLOT_LAYOUT = dict(
-    template="plotly_white",
-    margin=dict(l=18, r=18, t=60, b=18),
-    font=dict(family="Arial", size=12, color="#263247"),
-    legend_title_text=""
-)
-
-@st.cache_data
-def load_data():
-    workbook = "EduPro Online Platform.xlsx"
-    users = pd.read_excel(workbook, sheet_name="Users")
-    courses = pd.read_excel(workbook, sheet_name="Courses")
-    transactions = pd.read_excel(workbook, sheet_name="Transactions")
-
-    # Keep transaction rows as the unit of enrollment analysis
-    data = transactions.merge(users, on="UserID", how="left")
-    data = data.merge(courses, on="CourseID", how="left")
-
-    def age_group(age):
-        if pd.isna(age):
-            return "Unknown"
-        if age < 18:
-            return "<18"
-        if age <= 25:
-            return "18–25"
-        if age <= 35:
-            return "26–35"
-        if age <= 45:
-            return "36–45"
-        return "45+"
-
-    data["AgeGroup"] = data["Age"].apply(age_group)
-    if "TransactionDate" in data.columns:
-        data["TransactionDate"] = pd.to_datetime(data["TransactionDate"], errors="coerce")
-    return data
-
-try:
-    data = load_data()
-except FileNotFoundError:
-    st.error("Workbook not found. Keep **EduPro Online Platform.xlsx** in the same folder as this app.")
-    st.stop()
-except Exception as exc:
-    st.error(f"Unable to load the workbook. Check sheet and column names. Details: {exc}")
-    st.stop()
-
-age_order = ["<18", "18–25", "26–35", "36–45", "45+", "Unknown"]
-available_ages = [a for a in age_order if a in data["AgeGroup"].astype(str).unique()]
-gender_options = sorted(data["Gender"].dropna().unique().tolist())
-category_options = sorted(data["CourseCategory"].dropna().unique().tolist())
-level_options = sorted(data["CourseLevel"].dropna().unique().tolist())
-type_options = sorted(data["CourseType"].dropna().unique().tolist())
-
-# Sidebar
-st.sidebar.markdown("## 🎓 EduPro")
-st.sidebar.caption("LEARNER INTELLIGENCE")
-st.sidebar.markdown("---")
-st.sidebar.markdown("### Refine your analysis")
-
-age_filter = st.sidebar.multiselect("Age group", available_ages, default=available_ages)
-gender_filter = st.sidebar.multiselect("Gender", gender_options, default=gender_options)
-category_filter = st.sidebar.multiselect("Course category", category_options, default=category_options)
-level_filter = st.sidebar.multiselect("Course level", level_options, default=level_options)
-type_filter = st.sidebar.multiselect("Course type", type_options, default=type_options)
-
-if st.sidebar.button("Reset all filters", use_container_width=True):
-    st.rerun()
-
-st.sidebar.markdown("---")
-st.sidebar.caption("Filters apply to the overview and all analytical charts.")
-
-if not all([age_filter, gender_filter, category_filter, level_filter, type_filter]):
-    st.warning("Choose at least one value in every filter to display results.")
-    st.stop()
-
-filtered = data[
-    data["AgeGroup"].astype(str).isin(age_filter)
-    & data["Gender"].isin(gender_filter)
-    & data["CourseCategory"].isin(category_filter)
-    & data["CourseLevel"].isin(level_filter)
-    & data["CourseType"].isin(type_filter)
-].copy()
-
-if filtered.empty:
-    st.warning("No records match the current filters. Expand one or more filter selections.")
-    st.stop()
-
-# Derived metrics
-n_enrollments = len(filtered)
-n_learners = filtered["UserID"].nunique()
-courses_per_learner = filtered.groupby("UserID")["CourseID"].nunique()
-avg_courses = courses_per_learner.mean() if not courses_per_learner.empty else 0
-top_category = filtered["CourseCategory"].value_counts().idxmax()
-top_level = filtered["CourseLevel"].value_counts().idxmax()
-top_type = filtered["CourseType"].value_counts().idxmax()
-repeat_learners = int((courses_per_learner > 1).sum())
-repeat_rate = (repeat_learners / n_learners * 100) if n_learners else 0
-enrollments_per_learner = filtered.groupby("UserID").size()
-
-# Hero
 st.markdown("""
 <div class="hero">
-  <h1>EduPro Learner Intelligence</h1>
-  <p>Understand who learns, what they choose, and how enrollment activity changes across learner groups.</p>
+<h1>🎓 EduPro — Learner Analysis and Course Insights</h1>
+<p>Descriptive analysis of learner demographics, course preferences and enrollment behaviour.</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Overview metrics
-st.markdown("### Executive overview")
-st.markdown('<p class="section-note">A live snapshot based on your current filter selections.</p>', unsafe_allow_html=True)
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("Total enrollments", f"{n_enrollments:,}")
-m2.metric("Unique learners", f"{n_learners:,}")
-m3.metric("Avg. unique courses / learner", f"{avg_courses:.2f}")
-m4.metric("Repeat learners", f"{repeat_learners:,}", f"{repeat_rate:.1f}% of learners")
-m5.metric("Most selected category", str(top_category))
+@st.cache_data
+def load_data():
+    users = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Users")
+    courses = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Courses")
+    transactions = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Transactions")
+    df = transactions.merge(users, on="UserID", how="left").merge(courses, on="CourseID", how="left")
+    def age_group(age):
+        if pd.isna(age): return "Unknown"
+        if age < 18: return "<18"
+        if age <= 25: return "18-25"
+        if age <= 35: return "26-35"
+        if age <= 45: return "36-45"
+        return "45+"
+    df["AgeGroup"] = df["Age"].apply(age_group)
+    if "TransactionDate" in df.columns:
+        df["TransactionDate"] = pd.to_datetime(df["TransactionDate"], errors="coerce")
+    return df
 
-st.markdown("---")
+try:
+    data = load_data()
+except Exception as e:
+    st.error(f"Could not load workbook. Ensure 'EduPro Online Platform.xlsx' is beside this app.py. Details: {e}")
+    st.stop()
 
-# Tabs make the dashboard easier to navigate
-overview_tab, demographic_tab, course_tab, engagement_tab, insights_tab = st.tabs([
-    "📍 Overview", "👥 Demographics", "📚 Course insights", "🔁 Engagement", "💡 Findings & actions"
-])
+age_order = ["<18", "18-25", "26-35", "36-45", "45+", "Unknown"]
+ages = [x for x in age_order if x in data["AgeGroup"].unique()]
+st.sidebar.header("🔎 Filters")
+age_f = st.sidebar.multiselect("Age Group", ages, default=ages)
+gender_f = st.sidebar.multiselect("Gender", sorted(data["Gender"].dropna().unique()), default=sorted(data["Gender"].dropna().unique()))
+cat_f = st.sidebar.multiselect("Course Category", sorted(data["CourseCategory"].dropna().unique()), default=sorted(data["CourseCategory"].dropna().unique()))
+level_f = st.sidebar.multiselect("Course Level", sorted(data["CourseLevel"].dropna().unique()), default=sorted(data["CourseLevel"].dropna().unique()))
+type_f = st.sidebar.multiselect("Course Type", sorted(data["CourseType"].dropna().unique()), default=sorted(data["CourseType"].dropna().unique()))
+if not all([age_f, gender_f, cat_f, level_f, type_f]):
+    st.warning("Select at least one value in every filter.")
+    st.stop()
 
-with overview_tab:
-    st.subheader("Enrollment overview")
-    left, right = st.columns([1.35, 1])
-    with left:
-        age_enroll = filtered.groupby("AgeGroup", observed=False).size().reindex(
-            [a for a in age_order if a in age_filter], fill_value=0
-        ).rename_axis("Age group").reset_index(name="Enrollments")
-        fig = px.bar(
-            age_enroll, x="Age group", y="Enrollments", text="Enrollments",
-            color="Enrollments", color_continuous_scale="Teal",
-            title="Enrollment activity by age group"
-        )
-        fig.update_traces(textposition="outside")
-        fig.update_layout(**PLOT_LAYOUT, coloraxis_showscale=False, xaxis_title="", yaxis_title="Enrollments")
-        st.plotly_chart(fig, use_container_width=True)
-    with right:
-        category_mix = filtered["CourseCategory"].value_counts().rename_axis("Category").reset_index(name="Enrollments")
-        fig = px.pie(
-            category_mix, names="Category", values="Enrollments",
-            hole=.62, title="Enrollment mix by category"
-        )
-        fig.update_traces(textposition="inside", textinfo="percent")
-        fig.update_layout(**PLOT_LAYOUT)
-        st.plotly_chart(fig, use_container_width=True)
+df = data[data["AgeGroup"].isin(age_f) & data["Gender"].isin(gender_f) &
+          data["CourseCategory"].isin(cat_f) & data["CourseLevel"].isin(level_f) &
+          data["CourseType"].isin(type_f)].copy()
+if df.empty:
+    st.warning("No records match the selected filters.")
+    st.stop()
 
-    if "TransactionDate" in filtered.columns and filtered["TransactionDate"].notna().any():
-        st.subheader("Enrollment trend over time")
-        trend = filtered.dropna(subset=["TransactionDate"]).copy()
-        trend["Month"] = trend["TransactionDate"].dt.to_period("M").dt.to_timestamp()
-        trend = trend.groupby("Month").size().reset_index(name="Enrollments")
-        if not trend.empty:
-            fig = px.line(trend, x="Month", y="Enrollments", markers=True, title="Monthly enrollments")
-            fig.update_traces(line_width=3)
-            fig.update_layout(**PLOT_LAYOUT, xaxis_title="Month", yaxis_title="Enrollments")
-            st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("A monthly trend will appear when valid TransactionDate values are available.")
+# Metrics
+enrollments = len(df)
+learners = df["UserID"].nunique()
+unique_courses_per_learner = df.groupby("UserID")["CourseID"].nunique()
+avg_courses = unique_courses_per_learner.mean() if len(unique_courses_per_learner) else 0
+popular_category = df["CourseCategory"].value_counts().idxmax()
+k1,k2,k3,k4 = st.columns(4)
+k1.metric("Total Enrollments", f"{enrollments:,}")
+k2.metric("Unique Learners", f"{learners:,}")
+k3.metric("Avg. Unique Courses / Learner", f"{avg_courses:.2f}")
+k4.metric("Most Popular Category", str(popular_category))
+st.caption("Learners are unique people. Enrollments are course-registration records; one learner can have several enrollments.")
 
-with demographic_tab:
-    st.subheader("Who is learning?")
-    a, b = st.columns(2)
-    with a:
-        people_age = filtered.groupby("AgeGroup", observed=False)["UserID"].nunique().reindex(
-            [x for x in age_order if x in age_filter], fill_value=0
-        ).rename_axis("Age group").reset_index(name="Unique learners")
-        fig = px.bar(people_age, x="Age group", y="Unique learners", text="Unique learners",
-                     title="Unique learners by age group", color="Unique learners",
-                     color_continuous_scale="Blues")
-        fig.update_layout(**PLOT_LAYOUT, coloraxis_showscale=False, xaxis_title="", yaxis_title="Unique learners")
-        fig.update_traces(textposition="outside")
-        st.plotly_chart(fig, use_container_width=True)
-    with b:
-        people_gender = filtered.groupby("Gender")["UserID"].nunique().rename_axis("Gender").reset_index(name="Unique learners")
-        fig = px.pie(people_gender, names="Gender", values="Unique learners", hole=.55,
-                     title="Learner composition by gender")
-        fig.update_layout(**PLOT_LAYOUT)
-        st.plotly_chart(fig, use_container_width=True)
+# Main analysis: focus on learner demographics, course preferences, and enrollment behaviour.
 
-    age_gender = pd.crosstab(filtered["AgeGroup"].astype(str), filtered["Gender"])
-    st.subheader("Age group × gender")
-    fig = px.imshow(age_gender, text_auto=True, aspect="auto", title="Learner/enrollment records by age group and gender",
-                    labels={"x": "Gender", "y": "Age group", "color": "Records"})
-    fig.update_layout(**PLOT_LAYOUT)
+# Original charts, with the age chart corrected to count unique people
+st.header("👥 Learner Demographics")
+c1,c2 = st.columns(2)
+with c1:
+    d = df.groupby("AgeGroup")["UserID"].nunique().reindex([a for a in age_order if a in age_f], fill_value=0).rename_axis("Age Group").reset_index(name="Unique Learners")
+    fig = px.bar(d, x="Age Group", y="Unique Learners", text="Unique Learners", title="Learners by Age Group")
     st.plotly_chart(fig, use_container_width=True)
-    st.caption("The heatmap counts rows in the filtered enrollment-level dataset. Use the unique-learner charts for people counts.")
-
-with course_tab:
-    st.subheader("What courses are selected?")
-    a, b = st.columns(2)
-    with a:
-        cat = filtered["CourseCategory"].value_counts().rename_axis("Category").reset_index(name="Enrollments").sort_values("Enrollments")
-        fig = px.bar(cat, x="Enrollments", y="Category", orientation="h", text="Enrollments",
-                     title="Course category ranking", color="Enrollments", color_continuous_scale="Teal")
-        fig.update_layout(**PLOT_LAYOUT, coloraxis_showscale=False, xaxis_title="Enrollments", yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-    with b:
-        level = filtered["CourseLevel"].value_counts().rename_axis("Level").reset_index(name="Enrollments")
-        fig = px.bar(level, x="Enrollments", y="Level", orientation="h", text="Enrollments",
-                     title="Course level preference", color="Enrollments", color_continuous_scale="Blues")
-        fig.update_layout(**PLOT_LAYOUT, coloraxis_showscale=False, xaxis_title="Enrollments", yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-
-    a, b = st.columns(2)
-    with a:
-        ctype = filtered["CourseType"].value_counts().rename_axis("Course type").reset_index(name="Enrollments")
-        fig = px.pie(ctype, names="Course type", values="Enrollments", hole=.55, title="Free vs paid enrollment mix")
-        fig.update_layout(**PLOT_LAYOUT)
-        st.plotly_chart(fig, use_container_width=True)
-    with b:
-        top_courses = filtered.groupby("CourseName").size().sort_values(ascending=False).head(10).sort_values().rename_axis("Course").reset_index(name="Enrollments")
-        fig = px.bar(top_courses, x="Enrollments", y="Course", orientation="h", text="Enrollments",
-                     title="Top 10 courses by enrollment", color="Enrollments", color_continuous_scale="Teal")
-        fig.update_layout(**PLOT_LAYOUT, coloraxis_showscale=False, xaxis_title="Enrollments", yaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-
-    age_category = pd.crosstab(filtered["AgeGroup"].astype(str), filtered["CourseCategory"])
-    st.subheader("Course category by age group")
-    fig = px.imshow(age_category, text_auto=True, aspect="auto", title="Age group × course category heatmap",
-                    labels={"x": "Course category", "y": "Age group", "color": "Enrollments"})
-    fig.update_layout(**PLOT_LAYOUT)
+with c2:
+    d = df.groupby("Gender")["UserID"].nunique().rename_axis("Gender").reset_index(name="Unique Learners")
+    fig = px.bar(d, x="Gender", y="Unique Learners", text="Unique Learners", title="Gender Participation")
     st.plotly_chart(fig, use_container_width=True)
 
-with engagement_tab:
-    st.subheader("How learners engage")
-    a, b, c = st.columns(3)
-    a.metric("Learners with 2+ unique courses", f"{repeat_learners:,}")
-    a.metric("Repeat-learner share", f"{repeat_rate:.1f}%")
-    b.metric("Highest enrollments by one learner", f"{int(enrollments_per_learner.max()) if not enrollments_per_learner.empty else 0}")
-    b.metric("Median enrollments per learner", f"{enrollments_per_learner.median():.1f}" if not enrollments_per_learner.empty else "0")
-    c.metric("Unique courses represented", f"{filtered['CourseID'].nunique():,}")
-    c.metric("Course categories represented", f"{filtered['CourseCategory'].nunique():,}")
+st.header("📈 Age-wise Enrollment")
+d = df.groupby("AgeGroup").size().reindex([a for a in age_order if a in age_f], fill_value=0).rename_axis("Age Group").reset_index(name="Enrollments")
+fig = px.bar(d, x="Age Group", y="Enrollments", text="Enrollments", title="Enrollments Across Age Groups")
+st.plotly_chart(fig, use_container_width=True)
 
-    distribution = enrollments_per_learner.value_counts().sort_index().rename_axis("Enrollments per learner").reset_index(name="Number of learners")
-    fig = px.bar(distribution, x="Enrollments per learner", y="Number of learners", text="Number of learners",
-                 title="Learner enrollment frequency distribution")
-    fig.update_layout(**PLOT_LAYOUT, xaxis_title="Enrollments per learner", yaxis_title="Number of learners")
+st.header("📚 Course Preferences")
+c1,c2 = st.columns(2)
+with c1:
+    d = df["CourseCategory"].value_counts().rename_axis("Course Category").reset_index(name="Enrollments")
+    fig = px.bar(d, x="Enrollments", y="Course Category", orientation="h", title="Course Category Popularity")
+    st.plotly_chart(fig, use_container_width=True)
+with c2:
+    d = df["CourseLevel"].value_counts().rename_axis("Course Level").reset_index(name="Enrollments")
+    fig = px.bar(d, x="Enrollments", y="Course Level", orientation="h", title="Course Level Preference")
+    st.plotly_chart(fig, use_container_width=True)
+c1,c2 = st.columns(2)
+with c1:
+    d = df["CourseType"].value_counts().rename_axis("Course Type").reset_index(name="Enrollments")
+    fig = px.pie(d, names="Course Type", values="Enrollments", hole=.45, title="Course Type Popularity — Free vs Paid")
+    st.plotly_chart(fig, use_container_width=True)
+with c2:
+    d = df.groupby("CourseName").size().sort_values(ascending=False).head(10).sort_values().rename_axis("Course").reset_index(name="Enrollments")
+    fig = px.bar(d, x="Enrollments", y="Course", orientation="h", title="Top 10 Courses by Enrollment")
     st.plotly_chart(fig, use_container_width=True)
 
-    top_people = enrollments_per_learner.sort_values(ascending=False).head(10).rename_axis("UserID").reset_index(name="Enrollments")
-    fig = px.bar(top_people, x="Enrollments", y="UserID", orientation="h", text="Enrollments",
-                 title="Top 10 learners by enrollment count")
-    fig.update_layout(**PLOT_LAYOUT, xaxis_title="Enrollments", yaxis_title="Learner ID")
+st.header("🔥 Demographic Course Preferences")
+c1,c2 = st.columns(2)
+with c1:
+    d = pd.crosstab(df["AgeGroup"], df["CourseCategory"]).reindex([a for a in age_order if a in age_f], fill_value=0)
+    fig = px.imshow(d, text_auto=True, aspect="auto", title="Age Group vs Course Category",
+                    labels={"x":"Course Category","y":"Age Group","color":"Enrollments"})
+    st.plotly_chart(fig, use_container_width=True)
+with c2:
+    d = pd.crosstab(df["Gender"], df["CourseLevel"]).reset_index()
+    levels = [x for x in d.columns if x != "Gender"]
+    fig = px.bar(d, x="Gender", y=levels, barmode="group", title="Gender vs Course Level")
     st.plotly_chart(fig, use_container_width=True)
 
-with insights_tab:
-    st.subheader("Data-driven findings")
-    def insight_card(title, message):
-        st.markdown(f'<div class="insight"><strong>{title}</strong><br>{message}</div>', unsafe_allow_html=True)
+st.header("📊 Learner Behavior")
+counts = df.groupby("UserID").size()
+unique_counts = df.groupby("UserID")["CourseID"].nunique()
+a,b,c = st.columns(3)
+a.metric("Average Enrollments / Learner", f"{counts.mean():.2f}" if len(counts) else "0")
+b.metric("Maximum Enrollments by One Learner", f"{int(counts.max())}" if len(counts) else "0")
+c.metric("Learners with 2+ Unique Courses", f"{int((unique_counts > 1).sum()):,}")
+d = counts.sort_values(ascending=False).head(10).rename_axis("UserID").reset_index(name="Enrollments")
+fig = px.bar(d, x="UserID", y="Enrollments", title="Top 10 Active Learners", text="Enrollments")
+st.plotly_chart(fig, use_container_width=True)
+d = pd.crosstab(df["AgeGroup"], df["CourseLevel"]).reindex([a for a in age_order if a in age_f], fill_value=0).reset_index()
+levels = [x for x in d.columns if x != "AgeGroup"]
+fig = px.bar(d, x="AgeGroup", y=levels, barmode="group", title="Course Level Preference by Age Group")
+st.plotly_chart(fig, use_container_width=True)
 
-    insight_card("Age group with most enrollments", f"{age_enroll.sort_values('Enrollments', ascending=False).iloc[0]['Age group']} leads among the selected records.")
-    insight_card("Most selected category", f"{top_category} has the highest enrollment count in the current filter selection.")
-    insight_card("Most selected level", f"{top_level} is the most common course level in the current filter selection.")
-    insight_card("Course type", f"{top_type} courses have the most enrollments in the current filter selection.")
-    insight_card("Repeat engagement", f"{repeat_rate:.1f}% of learners in the current selection have enrolled in more than one unique course.")
+# Only two extra sections: useful and explainable
+st.header("🆕 Additional Analysis")
+if "TransactionDate" in df.columns and df["TransactionDate"].notna().any():
+    monthly_df = df.dropna(subset=["TransactionDate"]).copy()
+    monthly_df["Month"] = monthly_df["TransactionDate"].dt.to_period("M").dt.to_timestamp()
+    monthly = monthly_df.groupby("Month").size().rename("Enrollments").reset_index()
+    fig = px.line(monthly, x="Month", y="Enrollments", markers=True, title="Monthly Enrollment Trend")
+    st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Monthly trend is unavailable because the filtered records do not contain valid transaction dates.")
 
-    st.subheader("Recommendations to consider")
-    st.markdown(f"""
-    - Review demand for **{top_category}** courses and check whether course availability matches learner interest.
-    - Maintain clear learning paths across levels, especially where **{top_level}** enrollment is strongest.
-    - Compare the **{top_type}** enrollment mix with completion and revenue data before making pricing decisions.
-    - Use the age-group and course-category heatmap to identify segments worth investigating further.
-    - Investigate highly active learners to understand what supports repeat enrollment.
-    """)
-    st.info("These recommendations are analytical suggestions, not automated predictions. The workbook contains enrollment data; course completion, learner satisfaction, and revenue should not be inferred unless those fields are available.")
+freq = counts.value_counts().sort_index().rename_axis("Enrollments per Learner").reset_index(name="Number of Learners")
+fig = px.bar(freq, x="Enrollments per Learner", y="Number of Learners", title="Learner Enrollment Frequency")
+st.plotly_chart(fig, use_container_width=True)
 
-st.markdown("---")
-st.caption("EduPro • Descriptive learner analytics • Python · Pandas · Plotly Express · Streamlit")
+st.subheader("Course Enrollment Detail")
+summary = df.groupby(["CourseName","CourseCategory","CourseLevel","CourseType"]).size().rename("Enrollments").reset_index().sort_values("Enrollments", ascending=False)
+st.dataframe(summary, use_container_width=True, hide_index=True)
+st.download_button("Download course summary as CSV", summary.to_csv(index=False).encode("utf-8"),
+                   file_name="edupro_course_summary.csv", mime="text/csv")
+
+# Supporting checks: data quality for an education/enrollment dataset
+st.header("🧹 Data Quality Checks")
+st.write("These checks help assess whether learner, course and enrollment records are complete and consistent before interpreting the dashboard. They flag potential issues; they do not automatically delete or change records.")
+
+with st.expander("View data quality results", expanded=False):
+    try:
+        users_raw = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Users")
+        courses_raw = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Courses")
+        transactions_raw = pd.read_excel("EduPro Online Platform.xlsx", sheet_name="Transactions")
+
+        # Check the source sheets separately so repeated joins do not inflate counts.
+        user_missing = int(users_raw.isna().sum().sum())
+        course_missing = int(courses_raw.isna().sum().sum())
+        transaction_missing = int(transactions_raw.isna().sum().sum())
+        exact_dupes = int(transactions_raw.duplicated().sum())
+        missing_user_ids = int(transactions_raw["UserID"].isna().sum()) if "UserID" in transactions_raw else 0
+        missing_course_ids = int(transactions_raw["CourseID"].isna().sum()) if "CourseID" in transactions_raw else 0
+        unknown_users = int((~transactions_raw["UserID"].isin(users_raw["UserID"]) & transactions_raw["UserID"].notna()).sum()) if {"UserID"}.issubset(transactions_raw.columns) and "UserID" in users_raw else 0
+        unknown_courses = int((~transactions_raw["CourseID"].isin(courses_raw["CourseID"]) & transactions_raw["CourseID"].notna()).sum()) if "CourseID" in transactions_raw and "CourseID" in courses_raw else 0
+
+        q1, q2, q3, q4 = st.columns(4)
+        q1.metric("Missing values — Users", f"{user_missing:,}")
+        q2.metric("Missing values — Courses", f"{course_missing:,}")
+        q3.metric("Missing values — Transactions", f"{transaction_missing:,}")
+        q4.metric("Exact duplicate transaction rows", f"{exact_dupes:,}")
+
+        integrity = pd.DataFrame({
+            "Check": ["Enrollment missing UserID", "Enrollment missing CourseID", "UserID not found in Users sheet", "CourseID not found in Courses sheet"],
+            "Records flagged": [missing_user_ids, missing_course_ids, unknown_users, unknown_courses]
+        })
+        st.subheader("Enrollment consistency")
+        st.dataframe(integrity, use_container_width=True, hide_index=True)
+
+        if "Age" in users_raw.columns:
+            ages_numeric = pd.to_numeric(users_raw["Age"], errors="coerce")
+            invalid_age = int(((ages_numeric < 0) | (ages_numeric > 100)).sum())
+            st.metric("Age values outside 0–100", f"{invalid_age:,}")
+        if {"UserID", "CourseID"}.issubset(transactions_raw.columns):
+            repeated_pairs = int(transactions_raw.duplicated(subset=["UserID", "CourseID"], keep=False).sum())
+            st.metric("Rows in repeated learner-course pairs", f"{repeated_pairs:,}")
+            st.caption("Repeated learner-course pairs are flagged for review, not automatically treated as errors: a learner may legitimately enrol in the same course more than once.")
+        st.caption("A non-zero count is a prompt to investigate the source data. It does not by itself prove that a record is wrong.")
+    except Exception as e:
+        st.warning(f"Data quality checks could not be completed: {e}")
+
+st.header("💡 Key Insights")
+age_top = df["AgeGroup"].value_counts().idxmax()
+cat_top = df["CourseCategory"].value_counts().idxmax()
+level_top = df["CourseLevel"].value_counts().idxmax()
+type_top = df["CourseType"].value_counts().idxmax()
+st.markdown(f"""
+- **Highest enrollment age group:** {age_top}
+- **Most popular course category:** {cat_top}
+- **Most popular course level:** {level_top}
+- **Most enrolled course type:** {type_top}
+- **Unique learners in current filter:** {learners:,}
+""")
+st.header("🎯 Recommendations")
+st.markdown(f"""
+1. Review course availability and content for **{cat_top}**, the leading category in the selected data.
+2. Make learning pathways clear around **{level_top}** courses and routes to other levels.
+3. Compare **{type_top}** enrollments with revenue and completion data before making pricing decisions.
+4. Use age/category patterns to investigate learner interests, without assuming age causes preferences.
+5. Track enrollment trends over time where valid dates are available.
+""")
+st.info("EduPro is a descriptive analytics project. These charts identify patterns; they do not predict outcomes or prove causes.")
+st.header("🏁 Conclusion")
+st.write("EduPro combines learner, course and transaction data to understand demographics, course preferences and enrollment behaviour. It presents descriptive insights through interactive charts and filters.")
+st.caption("EduPro — Learner Analysis and Course Insights | Python · Pandas · Plotly Express · Streamlit")
